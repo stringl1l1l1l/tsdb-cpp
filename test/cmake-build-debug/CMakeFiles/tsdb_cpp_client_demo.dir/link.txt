@@ -1,0 +1,1 @@
+/usr/bin/c++  -O0 -Wall -g2 -ggdb -rdynamic CMakeFiles/tsdb_cpp_client_demo.dir/main.cpp.o -o tsdb_cpp_client_demo  -lgtest -lpthread -lzstd 

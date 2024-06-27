@@ -1,0 +1,3 @@
+/home/liwener/codes/tsdb-cpp/test/cmake-build-debug/CMakeFiles/tsdb_cpp_client_demo.dir
+/home/liwener/codes/tsdb-cpp/test/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/liwener/codes/tsdb-cpp/test/cmake-build-debug/CMakeFiles/rebuild_cache.dir
