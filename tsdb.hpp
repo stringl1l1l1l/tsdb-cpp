@@ -1,6 +1,7 @@
 #ifndef TSDB_CPP_HPP
 #define TSDB_CPP_HPP
 
+#include <cstddef>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
@@ -349,7 +350,7 @@ namespace tsdb_cpp {
         inline int insert_points(const std::vector<point>& points) {
             std::string mea = "datas";
             tsdb_data_builder tsdb_data_builder;
-            int i;
+            size_t i;
             for(i=0;i<points.size();i++) {
                 if(i%points_count_per_package==0) {
                     if(i>0) {
@@ -367,6 +368,7 @@ namespace tsdb_cpp {
                 int size = tsdb_data_builder.send_udp(sock, addr); 
                 if(size<=0)cout << "send size:" << size << std::endl;
             }
+            return 0;
         }
 
         inline int insert_point(const point& point) {
@@ -379,6 +381,7 @@ namespace tsdb_cpp {
             .timestamp(point.nanoseconds_);
             int size = tsdb_data_builder.send_udp(sock, addr); 
             if(size<=0)cout << "send size:" << size << std::endl;
+            return 0;
         }
     protected:
         int sock;

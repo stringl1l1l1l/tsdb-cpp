@@ -1,15 +1,16 @@
+// high frenqence data api
 #ifndef TSDB_HF_CPP_HPP
 #define TSDB_HF_CPP_HPP
 
-#include <cmath>
+#include "./utils/ArgParser.hpp"
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sched.h>
-#include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #ifdef _WIN32
@@ -53,48 +54,22 @@ struct point {
 };
 
 struct tsdb_entry {
+private:
+    struct arguments {
+        int compress_blockSize;
+        int compress_compressionLevel;
+        std::string compress_targetDir;
+    } arguments;
+
+public:
     tsdb_entry()
-        : host_(*new string(""))
     {
+        arguments.compress_blockSize = ArgParser::get<int>("blockSize", "hf_compress");
+        std::cout << arguments.compress_blockSize << endl;
     }
 
-    tsdb_entry(const string& host, int port)
-        : host_(host)
-        , port_(port)
+    void close()
     {
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        if ((addr.sin_addr.s_addr = inet_addr(host.c_str())) == INADDR_NONE) {
-            cout << "socket:" << -1 << endl;
-        }
-
-        if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-            cout << "socket:" << -2 << endl;
-        }
-    }
-
-    // 将数据压缩并写入文件的辅助函数
-    bool compressAndWriteToFile(const string& filename, const void* data, size_t dataSize)
-    {
-        // 估算压缩后的最大缓冲区大小
-        size_t const cBuffSize = ZSTD_compressBound(dataSize);
-        vector<char> cBuff(cBuffSize);
-
-        // 压缩数据
-        size_t const cSize = ZSTD_compress(cBuff.data(), cBuffSize, data, dataSize, 1);
-        if (ZSTD_isError(cSize)) {
-            cerr << "ZSTD_compress error: " << ZSTD_getErrorName(cSize) << endl;
-            return false;
-        }
-
-        // 将压缩后的数据写入文件
-        ofstream outFile(filename, ios::trunc | ios::binary);
-        if (!outFile) {
-            cerr << "Failed to open file " << filename << endl;
-            return false;
-        }
-        outFile.write(cBuff.data(), cSize);
-        return true;
     }
 
     bool streamCompressToFile(const string& filename, const vector<char>& input)
@@ -125,7 +100,7 @@ struct tsdb_entry {
          * @brief size_t ZSTD_compressStream2(ZSTD_CCtx* cctx, ZSTD_outBuffer* output, ZSTD_inBuffer* input
                                               , ZSTD_EndDirective endOp)
          * @description zstd的流式压缩API。
-         * zstd在单次流式压缩时将所有数据压缩为一个frame，frame由header和不同的固定大小的block组成，因此理论上可以实现无限大小的数据压缩。
+         * zstd在单次流式压缩时将所有数据压缩为一个frame，frame由header和多个可变大小的block组成，因此理论上可以实现无限大小的数据压缩。
          * 但由于压缩缓冲区ZSTD_outBuffer的大小有限，可能会出现缓冲区已满但没有形成一个完整大小block的情况，
          * 因此我们需要根据ZSTD_compressStream2()的返回结果,传入不同endOp，执行不同的操作。
          * @return remaining == 0 缓冲区有足够空间，endOp = ZSTD_e_continue继续压缩。
@@ -189,13 +164,13 @@ struct tsdb_entry {
         size_t const buffOutSize = ZSTD_DStreamOutSize();
         output.resize(buffOutSize);
         ZSTD_outBuffer outBuff = { output.data(), buffOutSize, 0 };
-        
+
         while (inFile) {
             // 创建输入缓冲区
             inFile.read(input.data(), buffInSize);
             const size_t hasRead = inFile.gcount();
             ZSTD_inBuffer inBuff = { input.data(), hasRead, 0 };
-            
+
             // todo: 由于压缩数据过多，单次写入缓冲区不能完成解压缩的逻辑
             while (inBuff.pos < inBuff.size) {
                 const size_t remaining = ZSTD_decompressStream(dctx, &outBuff, &inBuff);
@@ -253,32 +228,7 @@ struct tsdb_entry {
         return dSize;
     }
 
-    inline void close()
-    {
-        ::close(sock);
-    }
-
-    template <typename T>
-    vector<char> vec2Bytes(const vector<T>& input)
-    {
-        // 创建一个  vector<char>，其大小为输入向量大小乘以每个元素的字节大小
-        vector<char> output(input.size() * sizeof(T));
-
-        // 使用 memcpy 将数据从输入向量复制到输出向量中
-        memcpy(output.data(), input.data(), input.size() * sizeof(T));
-
-        return output;
-    }
-
-    template <typename T>
-    vector<T> bytes2Vec(const vector<char>& bytes)
-    {
-        vector<T> output(bytes.size() / sizeof(T));
-        memcpy(output.data(), bytes.data(), bytes.size());
-        return output;
-    }
-
-    inline int insert_points(const vector<point>& points)
+    int insert_points(const vector<point>& points)
     {
         vector<long long> timestamps;
         vector<double> values;
@@ -316,12 +266,49 @@ struct tsdb_entry {
         return points;
     }
 
-protected:
-    int sock;
-    struct sockaddr_in addr;
-    const string& host_;
-    int port_;
-    int points_count_per_package = 30;
+private:
+    template <typename T>
+    vector<char> vec2Bytes(const vector<T>& input)
+    {
+        // 创建一个  vector<char>，其大小为输入向量大小乘以每个元素的字节大小
+        vector<char> output(input.size() * sizeof(T));
+
+        // 使用 memcpy 将数据从输入向量复制到输出向量中
+        memcpy(output.data(), input.data(), input.size() * sizeof(T));
+
+        return output;
+    }
+
+    template <typename T>
+    vector<T> bytes2Vec(const vector<char>& bytes)
+    {
+        vector<T> output(bytes.size() / sizeof(T));
+        memcpy(output.data(), bytes.data(), bytes.size());
+        return output;
+    }
+    // 将数据压缩并写入文件的辅助函数
+    bool compressAndWriteToFile(const string& filename, const void* data, size_t dataSize)
+    {
+        // 估算压缩后的最大缓冲区大小
+        size_t const cBuffSize = ZSTD_compressBound(dataSize);
+        vector<char> cBuff(cBuffSize);
+
+        // 压缩数据
+        size_t const cSize = ZSTD_compress(cBuff.data(), cBuffSize, data, dataSize, 1);
+        if (ZSTD_isError(cSize)) {
+            cerr << "ZSTD_compress error: " << ZSTD_getErrorName(cSize) << endl;
+            return false;
+        }
+
+        // 将压缩后的数据写入文件
+        ofstream outFile(filename, ios::trunc | ios::binary);
+        if (!outFile) {
+            cerr << "Failed to open file " << filename << endl;
+            return false;
+        }
+        outFile.write(cBuff.data(), cSize);
+        return true;
+    }
 };
 }
 

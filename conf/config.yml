@@ -1,0 +1,7 @@
+hf:
+  compress:
+    targetDir: 1
+    blockSize: 4096
+    compressionLevel: 0 
+  decompress:
+    
