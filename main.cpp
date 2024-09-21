@@ -1,33 +1,11 @@
-#include "../tsdb.hpp" 
-#include "../tsdb_hf.hpp"
+#include "src/tsdb.hpp"
+#include "src/tsdb_hf.hpp"
+#include "test/tsdb_hf_test.cpp"
+#include "utils/utils.hpp"
 #include <ctime>
 #include <iostream>
-#include <sstream>
 #include <vector>
-
 using namespace std;
-
-long long stringToNanoseconds(const std::string& timestampStr)
-{
-    std::istringstream iss(timestampStr);
-
-    int year, month, day, hour, minute, second;
-    char delimiter;
-
-    iss >> year >> delimiter >> month >> delimiter >> day >> hour >> delimiter >> minute >> delimiter >> second;
-
-    struct tm timeStruct;
-    timeStruct.tm_year = year - 1900; // 年份需减去 1900
-    timeStruct.tm_mon = month - 1; // 月份从 0 开始，需减去 1
-    timeStruct.tm_mday = day;
-    timeStruct.tm_hour = hour;
-    timeStruct.tm_min = minute;
-    timeStruct.tm_sec = second;
-
-    time_t time = mktime(&timeStruct);
-    long long nanoseconds = static_cast<long long>(time) * 1000000000;
-    return nanoseconds;
-}
 
 void test_hf()
 {
@@ -36,7 +14,7 @@ void test_hf()
     std::vector<tsdb_hf_cpp::point> points;
     std::string timestampStr = "2024-02-19 12:34:56";
     // 日期字符串转纳秒
-    long long nanoseconds = stringToNanoseconds(timestampStr);
+    long long nanoseconds = Utils::stringToNanoseconds(timestampStr);
 
     // 数据点数
     int point_count = 100000;
@@ -55,12 +33,12 @@ void test_hf()
     }
 }
 
-int main(int argc, char const* argv[])
+void test2()
 {
     using namespace tsdb_hf_cpp;
     std::string timestampStr = "2024-02-19 12:34:56";
     // 日期字符串转纳秒
-    long long nanoseconds = stringToNanoseconds(timestampStr);
+    long long nanoseconds = Utils::stringToNanoseconds(timestampStr);
 
     // 本地或远程时序数据库的主机名和端口
     tsdb_entry tsdb_entry;
@@ -88,4 +66,26 @@ int main(int argc, char const* argv[])
     std::cout << "Operation took " << duration << " microseconds." << std::endl;
 
     cout << ret << endl;
+}
+
+void test()
+{
+    std::cout << "Start Unit Tests" << std::endl;
+    HfTest test;
+    test.streamCompressToFileUnitTest();
+    test.parseFormatStrUnitTest();
+    std::cout << "Unit Tests Done" << std::endl;
+}
+
+int main(int argc, char const* argv[])
+{
+    if (argc > 1) {
+        char const** p = argv;
+        while (p && *p) {
+            if (strcmp(*p++, "--test") == 0) {
+                test();
+                break;
+            }
+        }
+    }
 }

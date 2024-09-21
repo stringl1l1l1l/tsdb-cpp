@@ -19,7 +19,7 @@
 #define GET_VAR_NAME(Var) #Var
 
 static YAML::Node argsNode;
-static const char* DEFAULT_CONF_PATH = "../../conf/config.yml";
+static const char* DEFAULT_CONF_PATH = "../conf/config.yml";
 
 class ArgParser {
 public:
@@ -45,7 +45,7 @@ public:
             std::cerr << "Parser error: " << e.what() << std::endl;
             exit(1);
         } catch (YAML::InvalidNode& e) {
-            std::cerr << "Invalid argment: " << name << std::endl;
+            std::cerr << "Invalid node: " << name << std::endl;
             exit(1);
         } catch (YAML::TypedBadConversion<T>& e) {
             std::cerr << "Invalid type conversion: "
@@ -67,7 +67,7 @@ private:
         try {
             argsNode = YAML::LoadFile(loadPath);
         } catch (YAML::BadFile& e) {
-            std::cerr << "Invalid file path: " << loadPath << std::endl;
+            std::cerr << "Invalid config file path: " << loadPath << std::endl;
             exit(1);
         }
     }
