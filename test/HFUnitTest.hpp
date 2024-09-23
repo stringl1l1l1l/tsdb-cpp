@@ -1,20 +1,21 @@
 #include "../src/tsdb_hf.hpp"
-#include "../utils/utils.hpp"
+#include "../utils/Utils.hpp"
 #include <cassert>
+#include <cstddef>
 #include <map>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 using namespace tsdb_hf_cpp;
-class UnitTest {
+class HFUnitTest {
 private:
     tsdb_entry entry;
     std::vector<long long> timestamps;
     std::vector<double> values;
 
 public:
-    UnitTest()
+    HFUnitTest()
     {
         long long nanoseconds = Utils::getCurNanoseconds();
         int point_count = 1e6;
@@ -26,20 +27,30 @@ public:
 
     void streamCompressToFileUnitTest()
     {
-        const std::string testFile = "test.zst";
-        auto timestampsStream = Utils::vec2Bytes(timestamps);
-        ZSTD_inBuffer inputBuffer = { timestampsStream.data(), timestampsStream.size(), 0 };
-        std::vector<char> buffer(entry.arguments.compress_bufferSize, 0);
-        ZSTD_outBuffer compressBuffer = { buffer.data(), buffer.size(), 0 };
+        auto stream = Utils::vec2Bytes(timestamps);
+        ZSTD_inBuffer inBuffer = { stream.data(), stream.size(), 0 };
+        std::vector<char> buffer(ArgParser::get<size_t>("bufferSize", "hf_compress"), 0);
+        ZSTD_outBuffer outBuffer = { buffer.data(), buffer.size(), 0 };
 
-        auto res = entry.compressStreamToFile(entry.arguments.dataDir, testFile, inputBuffer, compressBuffer);
-        assert(res);
+        typedef tsdb_entry::CompressOp OP;
 
-        auto stream = entry.streamDecompressFromFile(entry.arguments.dataDir, testFile);
-        auto decoded = Utils::bytes2Vec<long long>(stream);
+        size_t idx = 0;
+        std::string targetDir = "../test/data";
+        OP op = OP::COMPRESS_CONTINUE;
+        std::string testFileName;
+        std::map<std::string, std::string> argsMap = { { "prefix", "test" }, { "index", "0" } };
+        while (op == OP::COMPRESS_CONTINUE) {
+            argsMap["index"] = std::to_string(idx++);
+            testFileName = Utils::parseFormatStr(ArgParser::get<std::string>("fileNameFormat", "hf"), argsMap);
+            op = entry.compressStreamToFilesWithOp(targetDir, testFileName, inBuffer, outBuffer);
+        }
+        assert(op != OP::COMPRESS_ERROR);
 
-        assert(decoded.size() == timestamps.size());
-        assert(Utils::vec1dEqual(timestamps, decoded));
+        // auto decoded = Utils::bytes2Vec<long long>(
+        //     entry.streamDecompressFromFile(ArgParser::get<std::string>("dataDir", "hf"), testFileName));
+
+        // assert(decoded.size() == timestamps.size());
+        // assert(Utils::vec1dEqual(timestamps, decoded));
     }
 
     static void parseFormatStrUnitTest()

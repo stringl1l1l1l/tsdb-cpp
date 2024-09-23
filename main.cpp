@@ -1,6 +1,6 @@
 #include "src/tsdb_hf.hpp"
-#include "test/UnitTest.hpp"
-#include "utils/utils.hpp"
+#include "test/HFUnitTest.hpp"
+#include "utils/Utils.hpp"
 #include <ctime>
 #include <iostream>
 #include <vector>
@@ -38,11 +38,11 @@ void test2()
 
 void test()
 {
-    std::cout << "Start Unit Tests" << std::endl;
-    UnitTest test;
+    std::cout << "———————————Start Unit Tests———————————" << std::endl;
+    HFUnitTest test;
     test.parseFormatStrUnitTest();
     test.streamCompressToFileUnitTest();
-    std::cout << "Unit Tests Done" << std::endl;
+    std::cout << "——+—————————Unit Tests Done———————————" << std::endl;
 }
 
 int main(int argc, char const* argv[])

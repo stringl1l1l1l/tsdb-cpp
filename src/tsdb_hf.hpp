@@ -3,13 +3,14 @@
 #define TSDB_HF_CPP_HPP
 
 #include "../utils/ArgParser.hpp"
-#include "../utils/utils.hpp"
+#include "../utils/Utils.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <ostream>
 #include <sched.h>
 #include <string>
 #include <vector>
@@ -54,12 +55,13 @@ struct point {
 };
 
 struct tsdb_entry {
-    enum StreamCompressOp {
+    enum CompressOp {
         COMPRESS_ERROR = -1,
         COMPRESS_CONTINUE = 0,
         COMPRESS_END = 1
     };
-    
+
+private:
     struct arguments {
         int compress_compressionLevel;
         size_t compress_bufferSize;
@@ -73,6 +75,7 @@ struct tsdb_entry {
     size_t timestampsFileIndex = 0;
     size_t valuesFileIndex = 0;
 
+public:
     tsdb_entry()
     {
         arguments.compress_bufferSize = ArgParser::get<size_t>("bufferSize", "hf_compress");
@@ -87,59 +90,62 @@ struct tsdb_entry {
     void close()
     {
     }
-    
-    
-    StreamCompressOp compressStreamToFile(const std::string& targetDir, const std::string& filenamePrefix, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
+
+    CompressOp compressStreamToFilesWithOp(const std::string& targetDir, const std::string& fileName, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
     {
-        std::ofstream outFile(targetDir + "/" + filenamePrefix, std::ios::binary);
+        std::ofstream outFile(targetDir + "/" + fileName, std::ios::binary);
         if (!outFile) {
-            std::cerr << "Cannot open file " << targetDir + "/" + filenamePrefix << std::endl;
+            std::cerr << "Cannot open file " << targetDir + "/" + fileName << std::endl;
             return COMPRESS_ERROR;
         }
         // 创建和初始化压缩上下文
         ZSTD_CCtx* cctx = ZSTD_createCCtx();
         if (cctx == nullptr) {
+            std::cerr << "Cannot create context" << std::endl;
             return COMPRESS_ERROR;
         }
 
         size_t initResult = ZSTD_initCStream(cctx, arguments.compress_compressionLevel);
         if (ZSTD_isError(initResult)) {
             ZSTD_freeCCtx(cctx);
+            std::cerr << "Cannot initialize context" << std::endl;
             return COMPRESS_ERROR;
         }
 
         // 如果输出缓冲区大小比输入缓冲区更大，一次压缩即可将所有输入缓冲区压缩
-        // 否则，需要分成多次进行，直到输入缓冲区pos == size
-        size_t remaining = 0;
-        while ((remaining = ZSTD_compressStream2(cctx, &outBuffer, &inBuffer, ZSTD_e_continue)) > 0 && inBuffer.pos < inBuffer.size) {
-            if (ZSTD_isError(remaining)) {
-                ZSTD_freeCCtx(cctx);
-                return COMPRESS_ERROR;
-            }
-            // 若缓冲区满，立即将当前缓冲区刷入，并重置缓冲区大小
-            if (outBuffer.size == outBuffer.pos) {
-                outFile.write((char*)outBuffer.dst, outBuffer.size);
-                outBuffer.pos = 0;
-            }
-        }
+        // 否则，需要多次调用该函数，直到CompressOP返回COMPRESS_END
+        size_t inBufferCapacity = inBuffer.size;
+        inBuffer.size = std::min(outBuffer.size, inBuffer.size);
+        size_t remaining = 1;
+        while (remaining > 0)
+            remaining = ZSTD_compressStream2(cctx, &outBuffer, &inBuffer, ZSTD_e_continue);
 
+        if (ZSTD_isError(remaining)) {
+            ZSTD_freeCCtx(cctx);
+            std::cerr << "Compress error" << std::endl;
+            return COMPRESS_ERROR;
+        }
         // 结束压缩
         size_t endResult = ZSTD_endStream(cctx, &outBuffer);
         if (ZSTD_isError(endResult)) {
             std::cerr << "Cannot end stream" << std::endl;
-            ZSTD_freeCCtx(cctx);
-            return COMPRESS_ERROR;
         }
 
-        outFile.write((char*)outBuffer.dst, outBuffer.pos);
+        assert(outBuffer.size == outBuffer.pos || inBuffer.size == inBuffer.pos);
+        outFile.write((char*)outBuffer.dst, outBuffer.size);
         outBuffer.pos = 0;
-        outFile.close();
 
+        auto res = COMPRESS_CONTINUE;
+        if (inBuffer.size == inBuffer.pos)
+            res = COMPRESS_END;
+        inBuffer.size = inBufferCapacity;
+
+        outFile.close();
         ZSTD_freeCCtx(cctx);
-        return COMPRESS_END;
+        return res;
     }
 
-    bool compressSteamToFileOnce(const std::string& targetDir, const std::string& filename, const std::vector<char>& input)
+    bool compressSteamToFile(const std::string& targetDir, const std::string& filename, const std::vector<char>& input)
     {
         std::ofstream outFile(targetDir + "/" + filename, std::ios::binary);
         if (!outFile) {
@@ -207,7 +213,7 @@ struct tsdb_entry {
         return true;
     }
 
-    std::vector<char> streamDecompressFromFile(const std::string& targetDir, const std::string& filename)
+    std::vector<char> decompressStreamFromFile(const std::string& targetDir, const std::string& filename)
     {
         std::vector<char> res;
         std::vector<char> output;
@@ -276,8 +282,8 @@ struct tsdb_entry {
 
         char* buffer = new char[arguments.compress_bufferSize];
         ZSTD_outBuffer outBuffer = { buffer, arguments.compress_bufferSize, 0 };
-        assert(compressStreamToFile(arguments.dataDir, timestampsFileName, timestampsInBuffer, outBuffer));
-        assert(compressStreamToFile(arguments.dataDir, valuesFileName, valuesInBuffer, outBuffer));
+        assert(compressStreamToFilesWithOp(arguments.dataDir, timestampsFileName, timestampsInBuffer, outBuffer));
+        assert(compressStreamToFilesWithOp(arguments.dataDir, valuesFileName, valuesInBuffer, outBuffer));
         delete[] buffer;
         return 0;
     }
@@ -285,8 +291,8 @@ struct tsdb_entry {
     std::vector<point> extract_points(const std::string& timestampsFilePath, const std::string& valuesFilePath)
     {
         std::vector<point> points;
-        auto timestampsStream = streamDecompressFromFile(arguments.dataDir, "timestamps.zst");
-        auto valuesStream = streamDecompressFromFile(arguments.dataDir, "values.zst");
+        auto timestampsStream = decompressStreamFromFile(arguments.dataDir, "timestamps.zst");
+        auto valuesStream = decompressStreamFromFile(arguments.dataDir, "values.zst");
         auto timestamps = Utils::bytes2Vec<long long>(timestampsStream);
         auto values = Utils::bytes2Vec<double>(valuesStream);
 
@@ -304,7 +310,7 @@ struct tsdb_entry {
     }
 
     // 将数据压缩并写入文件的辅助函数
-    bool compressAndWriteToFile(const std::string& filename, const void* data, size_t dataSize)
+    bool compressToFile(const std::string& filename, const void* data, size_t dataSize)
     {
         // 估算压缩后的最大缓冲区大小
         size_t const cBuffSize = ZSTD_compressBound(dataSize);

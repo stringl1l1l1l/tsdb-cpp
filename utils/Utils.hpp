@@ -2,11 +2,11 @@
 #define UTILS_HPP
 #include <chrono>
 #include <cstddef>
+#include <cstring>
 #include <map>
 #include <sstream>
 #include <string>
 #include <vector>
-
 class Utils {
 public:
     static std::string parseFormatStr(const std::string& format, const std::map<std::string, std::string>& args)

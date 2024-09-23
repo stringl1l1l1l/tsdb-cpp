@@ -5,6 +5,6 @@ hf:
   valuesFileNamePrefix: values
   zstFileMaxSize: 1024
   compress:
-    bufferSize: 64
+    bufferSize: 4096
     compressionLevel: 0
   decompress:
