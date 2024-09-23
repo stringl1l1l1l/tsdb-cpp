@@ -1,6 +1,5 @@
-#include "src/tsdb.hpp"
 #include "src/tsdb_hf.hpp"
-#include "test/tsdb_hf_test.cpp"
+#include "test/UnitTest.hpp"
 #include "utils/utils.hpp"
 #include <ctime>
 #include <iostream>
@@ -35,6 +34,29 @@ void test_hf()
 
 void test2()
 {
+}
+
+void test()
+{
+    std::cout << "Start Unit Tests" << std::endl;
+    UnitTest test;
+    test.parseFormatStrUnitTest();
+    test.streamCompressToFileUnitTest();
+    std::cout << "Unit Tests Done" << std::endl;
+}
+
+int main(int argc, char const* argv[])
+{
+    if (argc > 1) {
+        char const** p = argv;
+        while (p && *p) {
+            if (strcmp(*p++, "--test") == 0) {
+                test();
+                break;
+            }
+        }
+    }
+
     using namespace tsdb_hf_cpp;
     std::string timestampStr = "2024-02-19 12:34:56";
     // 日期字符串转纳秒
@@ -66,26 +88,4 @@ void test2()
     std::cout << "Operation took " << duration << " microseconds." << std::endl;
 
     cout << ret << endl;
-}
-
-void test()
-{
-    std::cout << "Start Unit Tests" << std::endl;
-    HfTest test;
-    test.streamCompressToFileUnitTest();
-    test.parseFormatStrUnitTest();
-    std::cout << "Unit Tests Done" << std::endl;
-}
-
-int main(int argc, char const* argv[])
-{
-    if (argc > 1) {
-        char const** p = argv;
-        while (p && *p) {
-            if (strcmp(*p++, "--test") == 0) {
-                test();
-                break;
-            }
-        }
-    }
 }

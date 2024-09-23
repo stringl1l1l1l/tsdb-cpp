@@ -24,7 +24,7 @@ public:
                     key.resize(0);
                 }
                 result += '{';
-            } else if (format[i] == '}' && result[result.size() - 1] == '{') {
+            } else if (format[i] == '}' && result[result.size() - 1] == '{' && !key.empty()) {
                 result.pop_back();
                 if (args.count(key))
                     result += args.at(key);
@@ -38,29 +38,33 @@ public:
         return result;
     }
 
-    // static std::string parseFormatStr(const std::string& format, const std::map<std::string, std::string>& args)
-    // {
-    //     std::stringstream result;
-    //     size_t n = format.size();
-    //     if (format.empty())
-    //         return std::string();
+    static std::string parseFormatStr(const std::string& format, const std::vector<std::string>& args)
+    {
+        std::string result;
+        std::string key;
+        size_t n = format.size();
+        if (format.empty())
+            return std::string();
 
-    //     size_t i = 0, j = 0;
-    //     while (i < n && j < n) {
-    //         while (format[i] != '{')
-    //             result << format[i++];
-    //         std::string key;
-    //         j = i + 1;
-    //         while (format[j] != '}')
-    //             key += format[j++];
-    //         if (args.count(key))
-    //             result << args.at(key);
-    //         else
-    //             result << '{' << key << '}';
-    //         i = j + 1;
-    //     }
-    //     return result.str();
-    // }
+        size_t idx = 0;
+        for (size_t i = 0; i < n; i++) {
+            if (format[i] == '{') {
+                if (!key.empty()) {
+                    result += key;
+                    key.resize(0);
+                }
+                result += '{';
+            } else if (format[i] == '}' && result[result.size() - 1] == '{' && !key.empty()) {
+                result.pop_back();
+                if (idx < args.size())
+                    result += args[idx++];
+                key.resize(0);
+            } else
+                key += format[i];
+        }
+        result += key;
+        return result;
+    }
 
     static long long getCurNanoseconds()
     {

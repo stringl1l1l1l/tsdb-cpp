@@ -1,10 +1,10 @@
 hf:
   dataDir: ../data
-  filenameFormat: "{prefix}---{index}"
-  timestampFileNamePrefix: timestamps
+  fileNameFormat: "{prefix}-{index}.zst"
+  timestampsFileNamePrefix: timestamps
   valuesFileNamePrefix: values
   zstFileMaxSize: 1024
   compress:
-    bufferSize: 4096
+    bufferSize: 64
     compressionLevel: 0
   decompress:
