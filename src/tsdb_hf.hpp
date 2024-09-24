@@ -41,7 +41,7 @@ struct tsdb_entry {
 private:
     struct arguments {
         int compress_compressionLevel;
-        size_t compress_bufferSize;
+        size_t compress_outBufferSize;
         size_t zstFileMaxSize;
         std::string dataDir;
         std::string fileNameFormat;
@@ -55,17 +55,86 @@ private:
 public:
     tsdb_entry()
     {
-        arguments.compress_bufferSize = ArgParser::get<size_t>("bufferSize", "hf_compress");
+        arguments.compress_outBufferSize = ArgParser::get<size_t>("outBufferSize", "hf_compress");
         arguments.compress_compressionLevel = ArgParser::get<int>("compressionLevel", "hf_compress");
-        arguments.zstFileMaxSize = ArgParser::get<size_t>("zstFileMaxSize", "hf");
+        // arguments.zstFileMaxSize = ArgParser::get<size_t>("zstFileMaxSize", "hf");
         arguments.dataDir = ArgParser::get<std::string>("dataDir", "hf");
         arguments.fileNameFormat = ArgParser::get<std::string>("fileNameFormat", "hf");
         arguments.timestampsFileNamePrefix = ArgParser::get<std::string>("timestampsFileNamePrefix", "hf");
         arguments.valuesFileNamePrefix = ArgParser::get<std::string>("valuesFileNamePrefix", "hf");
     }
 
+    int insert_points(const std::vector<point>& points, long long timestampOffset)
+    {
+        std::vector<long long> timestamps;
+        std::vector<double> values;
+        for (auto& p : points) {
+            timestamps.push_back(p.nanoseconds_);
+            values.push_back(p.value_);
+        }
+        compressStreamToFiles(Utils::vec2Bytes(timestamps), arguments.dataDir, "timestamps");
+        compressStreamToFiles(Utils::vec2Bytes(values), arguments.dataDir, "values");
+        return 0;
+    }
+
+    std::vector<point> extract_points(const std::string& timestampsFilePath, const std::string& valuesFilePath)
+    {
+        std::vector<point> points;
+        auto timestampsStream = decompressStreamFromFile(arguments.dataDir, "timestamps.zst");
+        auto valuesStream = decompressStreamFromFile(arguments.dataDir, "values.zst");
+        auto timestamps = Utils::bytes2Vec<long long>(timestampsStream);
+        auto values = Utils::bytes2Vec<double>(valuesStream);
+
+        if (timestamps.size() != values.size()) {
+            std::cerr << "Mismatched sizes of decompressed timestamps and values" << std::endl;
+            return points;
+        }
+
+        const auto name = new std::string("point");
+        for (size_t i = 0; i < timestamps.size(); i++) {
+            point p(*name, values[i], timestamps[i]);
+            points.push_back(p);
+        }
+        return points;
+    }
+
     void close()
     {
+    }
+
+    CompressOp compressStreamToFiles(const std::vector<char>& stream, const std::string targetDir, const std::string& fileNamePrefix, size_t index = 0)
+    {
+        // 创建和初始化压缩上下文
+        ZSTD_CCtx* cctx = ZSTD_createCCtx();
+        if (cctx == nullptr) {
+            std::cerr << "Cannot create context" << std::endl;
+            return COMPRESS_ERROR;
+        }
+        size_t initResult = ZSTD_initCStream(cctx, arguments.compress_compressionLevel);
+        if (ZSTD_isError(initResult)) {
+            ZSTD_freeCCtx(cctx);
+            std::cerr << "Cannot initialize context" << std::endl;
+            return COMPRESS_ERROR;
+        }
+
+        char* buffer = new char[arguments.compress_outBufferSize];
+        ZSTD_inBuffer inBuffer = { stream.data(), stream.size(), 0 };
+        ZSTD_outBuffer outBuffer = { buffer, arguments.compress_outBufferSize, 0 };
+        std::cout << inBuffer.size << std::endl;
+        std::cout << outBuffer.size << std::endl;
+        size_t idx = index;
+        CompressOp op = COMPRESS_CONTINUE;
+        std::string fileName;
+        std::map<std::string, std::string> argsMap = { { "prefix", fileNamePrefix }, { "index", "0" } };
+        while (op == COMPRESS_CONTINUE) {
+            argsMap["index"] = std::to_string(idx++);
+            fileName = targetDir + '/' + Utils::parseFormatStr(arguments.fileNameFormat, argsMap);
+            op = compressStreamToFileWithOp(cctx, fileName, inBuffer, outBuffer);
+        }
+
+        delete[] buffer;
+        ZSTD_freeCCtx(cctx);
+        return op;
     }
 
     CompressOp compressStreamToFilesWithOp(const std::string& targetDir, const std::string& fileName, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
@@ -86,6 +155,47 @@ public:
         if (ZSTD_isError(initResult)) {
             ZSTD_freeCCtx(cctx);
             std::cerr << "Cannot initialize context" << std::endl;
+            return COMPRESS_ERROR;
+        }
+
+        // 如果输出缓冲区大小比输入缓冲区更大，一次压缩即可将所有输入缓冲区压缩
+        // 否则，需要多次调用该函数，直到CompressOP返回COMPRESS_END
+        size_t inBufferCapacity = inBuffer.size;
+        inBuffer.size = std::min(outBuffer.size, inBuffer.size);
+        size_t remaining = 1;
+        while (remaining > 0)
+            remaining = ZSTD_compressStream2(cctx, &outBuffer, &inBuffer, ZSTD_e_flush);
+
+        if (ZSTD_isError(remaining)) {
+            ZSTD_freeCCtx(cctx);
+            std::cerr << "Compress error" << std::endl;
+            return COMPRESS_ERROR;
+        }
+        // 结束压缩
+        size_t endResult = ZSTD_endStream(cctx, &outBuffer);
+        if (ZSTD_isError(endResult)) {
+            std::cerr << "Cannot end stream" << std::endl;
+        }
+
+        assert(outBuffer.size == outBuffer.pos || inBuffer.size == inBuffer.pos);
+        outFile.write((char*)outBuffer.dst, outBuffer.size);
+        outBuffer.pos = 0;
+
+        auto res = COMPRESS_CONTINUE;
+        if (inBuffer.size == inBuffer.pos)
+            res = COMPRESS_END;
+        inBuffer.size = inBufferCapacity;
+
+        outFile.close();
+        ZSTD_freeCCtx(cctx);
+        return res;
+    }
+
+    CompressOp compressStreamToFileWithOp(ZSTD_CCtx* cctx, const std::string& fileName, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
+    {
+        std::ofstream outFile(fileName, std::ios::binary);
+        if (!outFile) {
+            std::cerr << "Cannot open file " << fileName << std::endl;
             return COMPRESS_ERROR;
         }
 
@@ -118,7 +228,6 @@ public:
         inBuffer.size = inBufferCapacity;
 
         outFile.close();
-        ZSTD_freeCCtx(cctx);
         return res;
     }
 
@@ -238,52 +347,6 @@ public:
         res.insert(res.end(), output.begin(), output.end());
         ZSTD_freeDCtx(dctx);
         return res;
-    }
-
-    int insert_points(const std::vector<point>& points)
-    {
-        std::vector<long long> timestamps;
-        std::vector<double> values;
-        for (auto& p : points) {
-            timestamps.push_back(p.nanoseconds_);
-            values.push_back(p.value_);
-        }
-
-        auto timestampsInput = Utils::vec2Bytes(timestamps);
-        auto valuesInput = Utils::vec2Bytes(values);
-        ZSTD_inBuffer timestampsInBuffer = { timestampsInput.data(), timestampsInput.size(), 0 };
-        ZSTD_inBuffer valuesInBuffer = { valuesInput.data(), valuesInput.size(), 0 };
-
-        std::string timestampsFileName = Utils::parseFormatStr(arguments.fileNameFormat, std::vector<std::string> { arguments.timestampsFileNamePrefix, std::to_string(timestampsFileIndex++) });
-        std::string valuesFileName = Utils::parseFormatStr(arguments.fileNameFormat, std::vector<std::string> { arguments.valuesFileNamePrefix, std::to_string(valuesFileIndex++) });
-
-        char* buffer = new char[arguments.compress_bufferSize];
-        ZSTD_outBuffer outBuffer = { buffer, arguments.compress_bufferSize, 0 };
-        assert(compressStreamToFilesWithOp(arguments.dataDir, timestampsFileName, timestampsInBuffer, outBuffer));
-        assert(compressStreamToFilesWithOp(arguments.dataDir, valuesFileName, valuesInBuffer, outBuffer));
-        delete[] buffer;
-        return 0;
-    }
-
-    std::vector<point> extract_points(const std::string& timestampsFilePath, const std::string& valuesFilePath)
-    {
-        std::vector<point> points;
-        auto timestampsStream = decompressStreamFromFile(arguments.dataDir, "timestamps.zst");
-        auto valuesStream = decompressStreamFromFile(arguments.dataDir, "values.zst");
-        auto timestamps = Utils::bytes2Vec<long long>(timestampsStream);
-        auto values = Utils::bytes2Vec<double>(valuesStream);
-
-        if (timestamps.size() != values.size()) {
-            std::cerr << "Mismatched sizes of decompressed timestamps and values" << std::endl;
-            return points;
-        }
-
-        const auto name = new std::string("point");
-        for (size_t i = 0; i < timestamps.size(); i++) {
-            point p(*name, values[i], timestamps[i]);
-            points.push_back(p);
-        }
-        return points;
     }
 
     // 将数据压缩并写入文件的辅助函数

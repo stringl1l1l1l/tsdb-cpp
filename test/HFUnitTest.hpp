@@ -1,7 +1,6 @@
 #include "../src/tsdb_hf.hpp"
 #include "../utils/Utils.hpp"
 #include <cassert>
-#include <cstddef>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -28,14 +27,16 @@ public:
     void streamCompressToFileUnitTest()
     {
         auto stream = Utils::vec2Bytes(timestamps);
+        // auto op = entry.compressStreamToFiles(stream, "../test/data", "test");
+        // assert(op == tsdb_entry::CompressOp::COMPRESS_END);
         ZSTD_inBuffer inBuffer = { stream.data(), stream.size(), 0 };
-        std::vector<char> buffer(ArgParser::get<size_t>("bufferSize", "hf_compress"), 0);
+        std::vector<char> buffer(ArgParser::get<size_t>("outBufferSize", "hf_compress"), 0);
         ZSTD_outBuffer outBuffer = { buffer.data(), buffer.size(), 0 };
 
         typedef tsdb_entry::CompressOp OP;
-
+        ZSTD_CCtx* cctx = ZSTD_createCCtx();
         size_t idx = 0;
-        std::string targetDir = "../test/data";
+        std::string targetDir = "../test/data/";
         OP op = OP::COMPRESS_CONTINUE;
         std::string testFileName;
         std::map<std::string, std::string> argsMap = { { "prefix", "test" }, { "index", "0" } };
@@ -45,7 +46,7 @@ public:
             op = entry.compressStreamToFilesWithOp(targetDir, testFileName, inBuffer, outBuffer);
         }
         assert(op != OP::COMPRESS_ERROR);
-
+        ZSTD_freeCCtx(cctx);
         // auto decoded = Utils::bytes2Vec<long long>(
         //     entry.streamDecompressFromFile(ArgParser::get<std::string>("dataDir", "hf"), testFileName));
 

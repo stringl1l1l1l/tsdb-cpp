@@ -3,8 +3,9 @@ hf:
   fileNameFormat: "{prefix}-{index}.zst"
   timestampsFileNamePrefix: timestamps
   valuesFileNamePrefix: values
-  zstFileMaxSize: 1024
+  
   compress:
-    bufferSize: 4096
+    outBufferSize: 64
     compressionLevel: 0
+    
   decompress:
