@@ -20,7 +20,7 @@
 #define GET_VAR_NAME(Var) #Var
 
 static YAML::Node argsNode;
-static const char* DEFAULT_CONF_PATH = "config.yml";
+static const char* DEFAULT_CONF_PATH = "../conf/config.yml";
 
 class ArgParser {
 public:
@@ -65,9 +65,13 @@ public:
 private:
     static void initialize()
     {
-        std::string configPath = std::string(getenv("TSDB_CONFIG_FILE_PATH"));
+        char* env = getenv("TSDB_CONFIG_FILE_PATH");
+        std::string configPath;
+        if (env)
+            configPath = std::string(env);
         if (configPath.empty())
             configPath = DEFAULT_CONF_PATH;
+            
         try {
             argsNode = YAML::LoadFile(configPath);
         } catch (YAML::BadFile& e) {

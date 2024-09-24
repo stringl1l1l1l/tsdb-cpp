@@ -1,14 +1,35 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
+
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <map>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
+
 class Utils {
 public:
+    template <typename T>
+    static bool mergeRange(std::pair<T, T>& p1, std::pair<T, T>& p2)
+    {
+        if (p1.first == p1.second) {
+            p1 = p2;
+            return true;
+        }
+
+        if (p1.first > p2.first)
+            std::swap(p1, p2);
+        if (p1.second < p2.first)
+            return false;
+        p1.first = std::min(p1.first, p2.first);
+        p1.second = std::max(p1.second, p2.second);
+        return true;
+    }
+
     static std::string parseFormatStr(const std::string& format, const std::map<std::string, std::string>& args)
     {
         std::string result;

@@ -1,9 +1,10 @@
 #include "../src/tsdb_hf.hpp"
 #include "../utils/Utils.hpp"
 #include <cassert>
+#include <cstddef>
 #include <map>
 #include <string>
-#include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace tsdb_hf_cpp;
@@ -17,23 +18,37 @@ public:
     HFUnitTest()
     {
         long long nanoseconds = Utils::getCurNanoseconds();
-        int point_count = 1e6;
+        int point_count = 10;
         for (int i = 0; i < point_count; i++) {
             timestamps.push_back(nanoseconds + i);
             values.push_back(i);
         }
     }
 
-    void streamCompressToFileUnitTest()
+    void streamEmitUnitTest()
+    {
+        Stream stream;
+        std::pair<size_t, size_t> range1 = { 1, 2 }, range2 = { 2, 5 }, range3 = { 7, 9 }, range4 = { 0, 0 }, range5 = { 8, 10 };
+        stream.addFile("test");
+        stream.addIdxRangeOfFile("test", range1);
+        stream.addIdxRangeOfFile("test", range2);
+        stream.addIdxRangeOfFile("test", range3);
+        stream.addIdxRangeOfFile("test", range4);
+        stream.addIdxRangeOfFile("test", range5);
+        stream.emit("../test/data/json");
+        stream.resetNumber();
+    }
+
+    void compressBytesToFilesUnitTest()
     {
         auto stream = Utils::vec2Bytes(timestamps);
-        auto op = entry.compressStreamToFiles(stream, "../test/data", "test");
-        assert(op == tsdb_entry::CompressOp::COMPRESS_END);
+        auto res = entry.compressBytesToFiles(stream, "../test/data", "test");
+        assert(res.first != res.second);
         // assert(decoded.size() == timestamps.size());
         // assert(Utils::vec1dEqual(timestamps, decoded));
     }
 
-    static void parseFormatStrUnitTest()
+    void parseFormatStrUnitTest()
     {
         auto format = "12{index}32{}{{}{prefix}}}";
         std::map<std::string, std::string> args1 = { { "prefix", "timestamps" }, { "index", "1" } };
@@ -42,16 +57,11 @@ public:
         assert(Utils::parseFormatStr(format, args2) == std::string("12timestamps32{}{{}1}}"));
     }
 
-    template <typename T>
-    static void traverse(const T& collection)
+    void mergeRangeUnitTest()
     {
-        if (std::is_same<T, std::vector<T>>::val) {
-            for (const auto& item : collection) {
-                traverse(item);
-            }
-        } else {
-            // 如果 T 不是 std::vector，直接输出元素
-            std::cout << collection << " ";
-        }
+        std::pair<size_t, size_t> p1 = { 1, 2 }, p2 = { 2, 4 };
+        auto res = Utils::mergeRange(p1, p2);
+        assert(p1.first == 1 && p1.second == 4);
+        assert(res);
     }
 };

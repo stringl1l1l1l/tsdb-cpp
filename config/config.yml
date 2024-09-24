@@ -1,11 +1,10 @@
 hf:
-  dataDir: ../data
+  dataDir: data
+  jsonDir: data/json
   fileNameFormat: "{prefix}-{index}.zst"
   timestampsFileNamePrefix: timestamps
   valuesFileNamePrefix: values
   
   compress:
-    outBufferSize: 64
+    outBufferSize: 40960
     compressionLevel: 0
-    
-  decompress:
