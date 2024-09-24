@@ -4,7 +4,6 @@
 
 #include "../utils/ArgParser.hpp"
 #include "../utils/Utils.hpp"
-#include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -16,7 +15,6 @@
 #include <unistd.h>
 #include <vector>
 #include <zstd.h>
-
 namespace tsdb_hf_cpp {
 
 struct point {
@@ -120,8 +118,7 @@ public:
         char* buffer = new char[arguments.compress_outBufferSize];
         ZSTD_inBuffer inBuffer = { stream.data(), stream.size(), 0 };
         ZSTD_outBuffer outBuffer = { buffer, arguments.compress_outBufferSize, 0 };
-        std::cout << inBuffer.size << std::endl;
-        std::cout << outBuffer.size << std::endl;
+
         size_t idx = index;
         CompressOp op = COMPRESS_CONTINUE;
         std::string fileName;
@@ -137,60 +134,6 @@ public:
         return op;
     }
 
-    CompressOp compressStreamToFilesWithOp(const std::string& targetDir, const std::string& fileName, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
-    {
-        std::ofstream outFile(targetDir + "/" + fileName, std::ios::binary);
-        if (!outFile) {
-            std::cerr << "Cannot open file " << targetDir + "/" + fileName << std::endl;
-            return COMPRESS_ERROR;
-        }
-        // 创建和初始化压缩上下文
-        ZSTD_CCtx* cctx = ZSTD_createCCtx();
-        if (cctx == nullptr) {
-            std::cerr << "Cannot create context" << std::endl;
-            return COMPRESS_ERROR;
-        }
-
-        size_t initResult = ZSTD_initCStream(cctx, arguments.compress_compressionLevel);
-        if (ZSTD_isError(initResult)) {
-            ZSTD_freeCCtx(cctx);
-            std::cerr << "Cannot initialize context" << std::endl;
-            return COMPRESS_ERROR;
-        }
-
-        // 如果输出缓冲区大小比输入缓冲区更大，一次压缩即可将所有输入缓冲区压缩
-        // 否则，需要多次调用该函数，直到CompressOP返回COMPRESS_END
-        size_t inBufferCapacity = inBuffer.size;
-        inBuffer.size = std::min(outBuffer.size, inBuffer.size);
-        size_t remaining = 1;
-        while (remaining > 0)
-            remaining = ZSTD_compressStream2(cctx, &outBuffer, &inBuffer, ZSTD_e_flush);
-
-        if (ZSTD_isError(remaining)) {
-            ZSTD_freeCCtx(cctx);
-            std::cerr << "Compress error" << std::endl;
-            return COMPRESS_ERROR;
-        }
-        // 结束压缩
-        size_t endResult = ZSTD_endStream(cctx, &outBuffer);
-        if (ZSTD_isError(endResult)) {
-            std::cerr << "Cannot end stream" << std::endl;
-        }
-
-        assert(outBuffer.size == outBuffer.pos || inBuffer.size == inBuffer.pos);
-        outFile.write((char*)outBuffer.dst, outBuffer.size);
-        outBuffer.pos = 0;
-
-        auto res = COMPRESS_CONTINUE;
-        if (inBuffer.size == inBuffer.pos)
-            res = COMPRESS_END;
-        inBuffer.size = inBufferCapacity;
-
-        outFile.close();
-        ZSTD_freeCCtx(cctx);
-        return res;
-    }
-
     CompressOp compressStreamToFileWithOp(ZSTD_CCtx* cctx, const std::string& fileName, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
     {
         std::ofstream outFile(fileName, std::ios::binary);
@@ -202,7 +145,7 @@ public:
         // 如果输出缓冲区大小比输入缓冲区更大，一次压缩即可将所有输入缓冲区压缩
         // 否则，需要多次调用该函数，直到CompressOP返回COMPRESS_END
         size_t inBufferCapacity = inBuffer.size;
-        inBuffer.size = std::min(outBuffer.size, inBuffer.size);
+        inBuffer.size = inBuffer.pos + std::min(outBuffer.size, inBufferCapacity);
         size_t remaining = 1;
         while (remaining > 0)
             remaining = ZSTD_compressStream2(cctx, &outBuffer, &inBuffer, ZSTD_e_continue);
@@ -218,16 +161,16 @@ public:
             std::cerr << "Cannot end stream" << std::endl;
         }
 
-        assert(outBuffer.size == outBuffer.pos || inBuffer.size == inBuffer.pos);
         outFile.write((char*)outBuffer.dst, outBuffer.size);
-        outBuffer.pos = 0;
+        outFile.close();
 
         auto res = COMPRESS_CONTINUE;
-        if (inBuffer.size == inBuffer.pos)
+        if (inBufferCapacity <= inBuffer.pos)
             res = COMPRESS_END;
-        inBuffer.size = inBufferCapacity;
 
-        outFile.close();
+        inBuffer.size = inBufferCapacity;
+        outBuffer.pos = 0;
+        
         return res;
     }
 
