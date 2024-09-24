@@ -1,5 +1,7 @@
 # 依赖项安装  
 
 ```shell
-sudo apt install pkg-config libzstd-dev libyaml-cpp-dev -y
+sudo apt-get install libzstd-dev libyaml-cpp-dev -y
+
+export TSDB_CONFIG_FILE_PATH=your/config/file/path
 ```

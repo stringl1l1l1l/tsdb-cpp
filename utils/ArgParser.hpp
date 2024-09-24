@@ -9,6 +9,7 @@
  */
 #ifndef ARG_PARSER_HPP
 #define ARG_PARSER_HPP
+#include <cstdlib>
 #include <cxxabi.h>
 #include <iostream>
 #include <string>
@@ -19,7 +20,7 @@
 #define GET_VAR_NAME(Var) #Var
 
 static YAML::Node argsNode;
-static const char* DEFAULT_CONF_PATH = "../conf/config.yml";
+static const char* DEFAULT_CONF_PATH = "config.yml";
 
 class ArgParser {
 public:
@@ -62,12 +63,15 @@ public:
     }
 
 private:
-    static void initialize(const std::string loadPath = DEFAULT_CONF_PATH)
+    static void initialize()
     {
+        std::string configPath = std::string(getenv("TSDB_CONFIG_FILE_PATH"));
+        if (configPath.empty())
+            configPath = DEFAULT_CONF_PATH;
         try {
-            argsNode = YAML::LoadFile(loadPath);
+            argsNode = YAML::LoadFile(configPath);
         } catch (YAML::BadFile& e) {
-            std::cerr << "Invalid config file path: " << loadPath << std::endl;
+            std::cerr << "Invalid config file path: " << configPath << std::endl;
             exit(1);
         }
     }

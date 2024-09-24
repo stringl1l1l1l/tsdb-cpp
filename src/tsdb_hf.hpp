@@ -13,33 +13,10 @@
 #include <ostream>
 #include <sched.h>
 #include <string>
-#include <vector>
-
-#ifdef _WIN32
-#define NOMINMAX
-#include <algorithm>
-#include <windows.h>
-#pragma comment(lib, "ws2_32")
-typedef struct iovec {
-    void* iov_base;
-    size_t iov_len;
-} iovec;
-inline __int64 writev(int sock, struct iovec* iov, int cnt)
-{
-    __int64 r = send(sock, (const char*)iov->iov_base, iov->iov_len, 0);
-    return (r < 0 || cnt == 1) ? r : r + writev(sock, iov + 1, cnt - 1);
-}
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/uio.h>
 #include <unistd.h>
+#include <vector>
 #include <zstd.h>
 
-#define closesocket close
-#endif
 namespace tsdb_hf_cpp {
 
 struct point {
