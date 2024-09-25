@@ -1,7 +1,7 @@
 ### 依赖项安装  
 
 ```shell
-sudo apt-get install libzstd-dev libyaml-cpp-dev -y
+sudo apt-get install libzstd-dev libyaml-cpp-dev nlohmann-json3-dev -y
 ```
 
 ### 设置配置文件路径

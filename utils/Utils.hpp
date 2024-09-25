@@ -1,7 +1,6 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
-#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
@@ -151,6 +150,16 @@ public:
         }
 
         return true;
+    }
+
+    template <typename Func, typename... Args>
+    static auto funcExecTimeMs(double& cost, Func func, Args&&... args)
+    {
+        auto start = std::chrono::high_resolution_clock::now();
+        auto res = func(std::forward<Args>(args)...);
+        auto end = std::chrono::high_resolution_clock::now();
+        cost = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        return res;
     }
 
     // template <typename T>

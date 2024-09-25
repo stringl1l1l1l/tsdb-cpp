@@ -20,7 +20,7 @@
 #define GET_VAR_NAME(Var) #Var
 
 static YAML::Node argsNode;
-static const char* DEFAULT_CONF_PATH = "../conf/config.yml";
+static const char* DEFAULT_CONF_PATH = "../config/config.yml";
 
 class ArgParser {
 public:

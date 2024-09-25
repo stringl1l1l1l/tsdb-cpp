@@ -4,6 +4,7 @@
 
 #include "../utils/ArgParser.hpp"
 #include "../utils/Utils.hpp"
+#include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -23,7 +24,7 @@
 namespace tsdb_hf_cpp {
 
 struct point {
-    const std::string& name_;
+    const std::string name_;
     double value_;
     long long nanoseconds_;
     point(const std::string& name, double value, long long nanoseconds)
@@ -35,8 +36,14 @@ struct point {
 };
 
 struct Stream {
+public:
+    size_t streamInputSize;
+    size_t streamOutputSize;
+    double compressTimeMs;
+
 private:
     static size_t streamNumber;
+    std::string streamName;
     long long timestampOffset;
     std::string timeUnit;
     std::map<std::string, std::vector<std::pair<size_t, size_t>>> idxRangesMap;
@@ -47,6 +54,10 @@ public:
         streamNumber++;
         timestampOffset = 0;
         timeUnit = "ns";
+        streamInputSize = 0;
+        streamOutputSize = 0;
+        compressTimeMs = 0;
+        streamName = "";
     }
 
     void addFile(const std::string& file)
@@ -95,7 +106,7 @@ public:
     void emit(const std::string& targetDir)
     {
         std::filesystem::create_directory(targetDir);
-        std::string path = targetDir + '/' + "stream" + std::to_string(streamNumber) + ".json";
+        std::string path = targetDir + '/' + streamName + ".json";
         std::fstream file(path, std::ios::out);
         if (!file) {
             std::cerr << "Cannot open file " << path << std::endl;
@@ -110,9 +121,30 @@ public:
         streamNumber = 0;
     }
 
+    void setName(std::string name)
+    {
+        streamName = name;
+    }
+
     size_t getNumber() const
     {
         return streamNumber;
+    }
+
+    std::string getName() const
+    {
+        return streamName;
+    }
+
+    void showPerformance()
+    {
+        std::cout << "stream " << streamName << "\'s performance: " << std::endl;
+        std::cout << "stream input size:  \t" << streamInputSize / 1024.0 << " KB" << std::endl;
+        std::cout << "stream output size: \t" << streamOutputSize / 1024.0 << " KB" << std::endl;
+        std::cout << "compress time cost: \t" << compressTimeMs << " ms." << std::endl;
+        std::cout << "compress ratio:     \t" << 100.0 * streamInputSize / streamOutputSize << " %." << std::endl;
+        std::cout << "throughput:         \t" << (streamInputSize / compressTimeMs) * 1000 / 1024 / 1024 << " MB/s.\n"
+                  << std::endl;
     }
 };
 
@@ -130,6 +162,7 @@ private:
         int compress_compressionLevel;
         size_t compress_outBufferSize;
         size_t zstFileMaxSize;
+        size_t indexWidth;
         std::string dataDir;
         std::string jsonDir;
         std::string fileNameFormat;
@@ -149,7 +182,7 @@ public:
         arguments.fileNameFormat = ArgParser::get<std::string>("fileNameFormat", "hf");
         arguments.timestampsFileNamePrefix = ArgParser::get<std::string>("timestampsFileNamePrefix", "hf");
         arguments.valuesFileNamePrefix = ArgParser::get<std::string>("valuesFileNamePrefix", "hf");
-        
+        arguments.indexWidth = 10;
         std::filesystem::create_directory(arguments.dataDir);
         std::filesystem::create_directory(arguments.jsonDir);
     }
@@ -163,6 +196,7 @@ public:
 
     void close()
     {
+        stream->showPerformance();
         stream->emit(arguments.jsonDir);
         delete stream;
         stream = nullptr;
@@ -175,6 +209,7 @@ public:
             exit(0);
         }
 
+        stream->setName(points[0].name_);
         std::vector<long long> timestamps;
         std::vector<double> values;
         for (auto& p : points) {
@@ -182,10 +217,20 @@ public:
             values.push_back(p.value_);
         }
 
-        std::string targetDir = arguments.dataDir + '/' + "stream" + std::to_string(stream->getNumber());
-        auto range1 = compressBytesToFiles(Utils::vec2Bytes(timestamps), targetDir, arguments.timestampsFileNamePrefix);
-        auto range2 = compressBytesToFiles(Utils::vec2Bytes(values), targetDir, arguments.valuesFileNamePrefix);
+        std::string targetDir = arguments.dataDir + '/' + stream->getName();
 
+        auto bytes1 = Utils::vec2Bytes(timestamps);
+        auto bytes2 = Utils::vec2Bytes(values);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        auto [range1, outputSize1] = compressBytesToFiles(bytes1, targetDir, arguments.timestampsFileNamePrefix);
+        auto [range2, outputSize2] = compressBytesToFiles(bytes2, targetDir, arguments.valuesFileNamePrefix);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto timeCostMS = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+        stream->streamInputSize += bytes1.size() + bytes2.size();
+        stream->compressTimeMs += timeCostMS;
+        stream->streamOutputSize += outputSize1 + outputSize2;
         stream->addIdxRangeOfFile(arguments.timestampsFileNamePrefix, range1);
         stream->addIdxRangeOfFile(arguments.valuesFileNamePrefix, range2);
 
@@ -213,22 +258,24 @@ public:
         return points;
     }
 
-    std::pair<size_t, size_t> compressBytesToFiles(const std::vector<char>& bytes, const std::string targetDir, const std::string& fileNamePrefix, size_t beg = 0)
+    std::pair<std::pair<size_t, size_t>, size_t> compressBytesToFiles(const std::vector<char>& bytes, const std::string targetDir, const std::string& fileNamePrefix, size_t beg = 0)
     {
         // 创建和初始化压缩上下文
         ZSTD_CCtx* cctx = ZSTD_createCCtx();
         if (cctx == nullptr) {
             std::cerr << "Cannot create context" << std::endl;
-            return { 0, 0 };
+            return { { 0, 0 }, 0 };
         }
         size_t initResult = ZSTD_initCStream(cctx, arguments.compress_compressionLevel);
         if (ZSTD_isError(initResult)) {
             ZSTD_freeCCtx(cctx);
             std::cerr << "Cannot initialize context" << std::endl;
-            return { 0, 0 };
+            return { { 0, 0 }, 0 };
         }
+
         std::filesystem::create_directory(targetDir);
 
+        size_t outputSize = 0;
         char* buffer = new char[arguments.compress_outBufferSize];
         ZSTD_inBuffer inBuffer = { bytes.data(), bytes.size(), 0 };
         ZSTD_outBuffer outBuffer = { buffer, arguments.compress_outBufferSize, 0 };
@@ -238,14 +285,18 @@ public:
         std::string fileName;
         std::map<std::string, std::string> argsMap = { { "prefix", fileNamePrefix }, { "index", "0" } };
         while (op == COMPRESS_CONTINUE) {
-            argsMap["index"] = std::to_string(idx++);
+            std::stringstream indexStr;
+            indexStr << std::setw(arguments.indexWidth) << std::setfill('0') << idx++;
+            argsMap["index"] = indexStr.str();
             fileName = targetDir + '/' + Utils::parseFormatStr(arguments.fileNameFormat, argsMap);
             op = compressToFileWithOp(cctx, fileName, inBuffer, outBuffer);
+            outputSize += outBuffer.pos;
+            outBuffer.pos = 0;
         }
 
         delete[] buffer;
         ZSTD_freeCCtx(cctx);
-        return { beg, idx };
+        return { { beg, idx }, outputSize };
     }
 
     CompressOp compressToFileWithOp(ZSTD_CCtx* cctx, const std::string& fileName, ZSTD_inBuffer& inBuffer, ZSTD_outBuffer& outBuffer)
@@ -283,8 +334,6 @@ public:
             res = COMPRESS_END;
 
         inBuffer.size = inBufferCapacity;
-        outBuffer.pos = 0;
-
         return res;
     }
 

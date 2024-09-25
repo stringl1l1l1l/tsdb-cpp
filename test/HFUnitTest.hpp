@@ -41,8 +41,8 @@ public:
 
     void compressBytesToFilesUnitTest()
     {
-        auto stream = Utils::vec2Bytes(timestamps);
-        auto res = entry.compressBytesToFiles(stream, "../test/data", "test");
+        auto bytes = Utils::vec2Bytes(timestamps);
+        auto [res, size] = entry.compressBytesToFiles(bytes, "../test/data", "test");
         assert(res.first != res.second);
         // assert(decoded.size() == timestamps.size());
         // assert(Utils::vec1dEqual(timestamps, decoded));

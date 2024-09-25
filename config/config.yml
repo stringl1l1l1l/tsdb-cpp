@@ -1,6 +1,6 @@
 hf:
   dataDir: data
-  jsonDir: data/json
+  jsonDir: data
   fileNameFormat: "{prefix}-{index}.zst"
   timestampsFileNamePrefix: timestamps
   valuesFileNamePrefix: values
