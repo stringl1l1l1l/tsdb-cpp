@@ -4,11 +4,11 @@
 
 #include "../utils/ArgParser.hpp"
 #include "../utils/Utils.hpp"
-#include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -43,9 +43,10 @@ public:
 
 private:
     static size_t streamNumber;
-    std::string streamName;
     long long timestampOffset;
+    std::string streamName;
     std::string timeUnit;
+    std::string datetimeStr;
     std::map<std::string, std::vector<std::pair<size_t, size_t>>> idxRangesMap;
 
 public:
@@ -106,7 +107,7 @@ public:
     void emit(const std::string& targetDir)
     {
         std::filesystem::create_directory(targetDir);
-        std::string path = targetDir + '/' + streamName + ".json";
+        std::string path = targetDir + '/' + streamName + datetimeStr + ".json";
         std::fstream file(path, std::ios::out);
         if (!file) {
             std::cerr << "Cannot open file " << path << std::endl;
@@ -134,6 +135,16 @@ public:
     std::string getName() const
     {
         return streamName;
+    }
+
+    void setDatetimeStr(std::string datetime)
+    {
+        datetimeStr = datetime;
+    }
+
+    std::string getDatetimeStr() const
+    {
+        return datetimeStr;
     }
 
     void showPerformance()
@@ -210,6 +221,7 @@ public:
         }
 
         stream->setName(points[0].name_);
+        stream->setDatetimeStr(Utils::getCurDatetimeStr());
         std::vector<long long> timestamps;
         std::vector<double> values;
         for (auto& p : points) {
@@ -217,7 +229,7 @@ public:
             values.push_back(p.value_);
         }
 
-        std::string targetDir = arguments.dataDir + '/' + stream->getName();
+        std::string targetDir = arguments.dataDir + '/' + stream->getName() + stream->getDatetimeStr();
 
         auto bytes1 = Utils::vec2Bytes(timestamps);
         auto bytes2 = Utils::vec2Bytes(values);

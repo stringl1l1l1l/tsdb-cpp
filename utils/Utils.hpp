@@ -4,12 +4,13 @@
 #include <chrono>
 #include <cstddef>
 #include <cstring>
+#include <ctime>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
-
 class Utils {
 public:
     template <typename T>
@@ -84,6 +85,15 @@ public:
         }
         result += key;
         return result;
+    }
+
+    static std::string getCurDatetimeStr(std::string format = "%Y%m%d%H%M%S")
+    {
+        std::stringstream res;
+        std::time_t t = std::time(nullptr);
+        std::tm* tm = std::localtime(&t);
+        res << std::put_time(tm, format.c_str());
+        return res.str();
     }
 
     static long long getCurNanoseconds()
