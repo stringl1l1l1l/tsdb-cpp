@@ -301,7 +301,8 @@ public:
             indexStr << std::setw(arguments.indexWidth) << std::setfill('0') << idx++;
             argsMap["index"] = indexStr.str();
             fileName = targetDir + '/' + Utils::parseFormatStr(arguments.fileNameFormat, argsMap);
-            op = compressToFileWithOp(cctx, fileName, inBuffer, outBuffer);
+            op = compressToFileWithOp(cctx, fileName + ".zst", inBuffer, outBuffer);
+            std::ofstream outFile(fileName + ".sync", std::ios::binary);
             outputSize += outBuffer.pos;
             outBuffer.pos = 0;
         }
